@@ -2,7 +2,7 @@
 
   threadSafeFS.h
 
-  This file is part of Multitasking HTTP, FTP, Telnet, NTP, SMTP servers and clients for ESP32 - Arduino library: https://github.com/BojanJurca/Multitasking-Http-Ftp-Telnet-Ntp-Smtp-Servers-and-clients-for-ESP32-Arduino-Library
+    This file is part of ThreadSafeFS - Thread-Safe Filesystem Wrapper for ESP32: https://github.com/BojanJurca/Thread-safe-file-sytem-wrapper-Arduino-library-for-ESP32
 
 
   A FS wrapper with mutex for multitasking.
