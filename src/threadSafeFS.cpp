@@ -43,7 +43,16 @@ threadSafeFS::File::File (File&& other) noexcept {
 threadSafeFS::File& threadSafeFS::File::operator= (threadSafeFS::File&& other) noexcept {
     if (this != &other) { 
         if (__file__) { 
-            __file__->close (); 
+
+            auto it = ::find (__threadSafeFileSystem__->readOpenedFiles.begin (), __threadSafeFileSystem__->readOpenedFiles.end (), __file__->path ());
+            if (it != __threadSafeFileSystem__->readOpenedFiles.end ()) {
+                __threadSafeFileSystem__->readOpenedFiles.erase (it); // file opened in read mode
+            } else {
+                it = ::find (__threadSafeFileSystem__->writeOpenedFiles.begin (), __threadSafeFileSystem__->writeOpenedFiles.end (), __file__->path ());
+                __threadSafeFileSystem__->writeOpenedFiles.erase (it); // file opened in write mode
+            }
+
+            __file__->close ();
             delete __file__; 
         } 
         __file__ = other.__file__; 
@@ -51,6 +60,7 @@ threadSafeFS::File& threadSafeFS::File::operator= (threadSafeFS::File&& other) n
         other.__file__ = NULL; 
         other.__threadSafeFileSystem__ = NULL; 
     } 
+
     return *this;
 }
 
@@ -62,7 +72,7 @@ Cstring<255> threadSafeFS::File::path () {
     Cstring<255> path;
     if (!*this) return path;
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
-    path = __file__->path ();
+        path = __file__->path ();
     xSemaphoreGive (getFsMutex ());
     return path;
 }
