@@ -1,33 +1,24 @@
 // 1️⃣ Include a file system of your choice
-#include <LittleFS.h>             // Or SPIFFS.h or FFat.h or SD.h ...
+#include <LittleFS.h>         // Use LittleFS as base file system (or SPIFFS or FFat or SD)
 
 
 // 2️⃣ Include thread-safe wrapper
-#include <threadSafeFS.h>         // Include thread-safe wrapper since LittleFS, FFat and SD file systems are not thread safe
-
-
-// 3️⃣ Crete thread-safe wrapper instance arround LittleFS (or SPIFFS or FFat or SD ...)
-threadSafeFS::FS TSFS (LittleFS);
-
-
-// 4️⃣ Simplify programming by changing the meaning of File from fs::File to threadSafeFS::File
-using File = threadSafeFS::File;  // Use thread-safe wrapper for all file operations form now on in your code
+#include <threadSafeFS.h>     // Create thread safe wrapper arround base file system
 
 
 void setup () {
   Serial.begin (115200);
 
 
-  // 5️⃣ Start LittleFS (or SPIFFS or FFat or SD ...)
-  LittleFS.begin (true);
+  // 3️⃣ Start underlaying file system: LittleFS (or SPIFFS or FFat or SD ...)
+  tsfs.begin (true);
 
 
   // 6️⃣ Use thread-safe wrapper instance from now on
 
-
   // Create test file
-  if (!TSFS.exists ("/test.txt")) {
-    File f = TSFS.open ("/test.txt", "w");
+  if (!tsfs.exists ("/test.txt")) {
+    File f = tsfs.open ("/test.txt", "w");
     if (f) {
       f.print ("This is a test file.");
       f.close ();
@@ -42,7 +33,7 @@ void setup () {
                                   while (true) {
                                     delay (900);
 
-                                    File f = TSFS.open ("/test.txt", "r");
+                                    File f = tsfs.open ("/test.txt", "r");
                                     if (f) {
 
                                       // read file content
@@ -67,7 +58,7 @@ void setup () {
 void loop () {
   delay (1000);
 
-  File f = TSFS.open ("/test.txt", "r");
+  File f = tsfs.open ("/test.txt", "r");
   if (f) {
 
     // read file content
