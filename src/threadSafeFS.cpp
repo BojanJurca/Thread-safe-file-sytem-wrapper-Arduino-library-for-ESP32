@@ -7,7 +7,7 @@
 
   A FS wrapper with mutex for multitasking.
 
-  March 12, 2026, Bojan Jurca
+  Aug 12, 2026, Bojan Jurca
 
 */
 
@@ -44,12 +44,12 @@ threadSafeFS::File& threadSafeFS::File::operator= (threadSafeFS::File&& other) n
     if (this != &other) { 
         if (__file__) { 
 
-            auto it = ::find (__threadSafeFileSystem__->readOpenedFiles.begin (), __threadSafeFileSystem__->readOpenedFiles.end (), __file__->path ());
-            if (it != __threadSafeFileSystem__->readOpenedFiles.end ()) {
-                __threadSafeFileSystem__->readOpenedFiles.erase (it); // file opened in read mode
+            auto itr = ::find (__threadSafeFileSystem__->readOpenedFiles.begin (), __threadSafeFileSystem__->readOpenedFiles.end (), __file__->path ());
+            if (itr != __threadSafeFileSystem__->readOpenedFiles.end ()) {
+                __threadSafeFileSystem__->readOpenedFiles.erase (itr); // file opened in read mode
             } else {
-                it = ::find (__threadSafeFileSystem__->writeOpenedFiles.begin (), __threadSafeFileSystem__->writeOpenedFiles.end (), __file__->path ());
-                __threadSafeFileSystem__->writeOpenedFiles.erase (it); // file opened in write mode
+                itr = ::find (__threadSafeFileSystem__->writeOpenedFiles.begin (), __threadSafeFileSystem__->writeOpenedFiles.end (), __file__->path ());
+                __threadSafeFileSystem__->writeOpenedFiles.erase (itr); // file opened in write mode
             }
 
             __file__->close ();
@@ -68,22 +68,32 @@ threadSafeFS::File::~File () {
     close ();
 }
 
+const char * threadSafeFS::File::__path__ () {
+    const char *ptr = __file__->path ();
+    return __file__ ? ptr : "";
+}
+
 Cstring<255> threadSafeFS::File::path () {
-    Cstring<255> path;
-    if (!*this) return path;
+    Cstring<255> retVal;
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
-        path = __file__->path ();
+        if (__file__)
+            retVal = __path__ ();
     xSemaphoreGive (getFsMutex ());
-    return path;
+    return retVal;
+}
+
+const char * threadSafeFS::File::__name__ () {
+    const char *ptr = __file__->name ();
+    return __file__ ? ptr : "";
 }
 
 Cstring<255> threadSafeFS::File::name () {
-    Cstring<255> name;
-    if (!*this) return name;
+    Cstring<255> retVal;
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
-    name = __file__->name ();
+        if (__file__)
+            retVal = __name__ ();
     xSemaphoreGive (getFsMutex ());
-    return name;
+    return retVal;
 }
 
 time_t threadSafeFS::File::getLastWrite () {
@@ -97,7 +107,10 @@ time_t threadSafeFS::File::getLastWrite () {
 size_t threadSafeFS::File::write (const uint8_t* buf, size_t len) {
     if (!*this) return 0;
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
+    errno = 0;
     size_t s = __file__->write (buf, len);
+    if (errno)
+        s = 0;
     xSemaphoreGive (getFsMutex ());
     return s;
 }
@@ -105,7 +118,10 @@ size_t threadSafeFS::File::write (const uint8_t* buf, size_t len) {
 size_t threadSafeFS::File::write (uint8_t b) {
     if (!*this) return 0;
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
+    errno = 0;
     size_t s = __file__->write (b);
+    if (errno)
+        s = 0;
     xSemaphoreGive (getFsMutex ());
     return s;
 }
@@ -172,12 +188,12 @@ void threadSafeFS::File::close () {
         return;
     }
 
-    auto it = ::find (__threadSafeFileSystem__->readOpenedFiles.begin (), __threadSafeFileSystem__->readOpenedFiles.end (), __file__->path ());
-    if (it != __threadSafeFileSystem__->readOpenedFiles.end ()) {
-        __threadSafeFileSystem__->readOpenedFiles.erase (it); // file opened in read mode
+    auto itr = ::find (__threadSafeFileSystem__->readOpenedFiles.begin (), __threadSafeFileSystem__->readOpenedFiles.end (), __file__->path ());
+    if (itr != __threadSafeFileSystem__->readOpenedFiles.end ()) {
+        __threadSafeFileSystem__->readOpenedFiles.erase (itr); // file opened in read mode
     } else {
-        it = ::find (__threadSafeFileSystem__->writeOpenedFiles.begin (), __threadSafeFileSystem__->writeOpenedFiles.end (), __file__->path ());
-        __threadSafeFileSystem__->writeOpenedFiles.erase (it); // file opened in write mode
+        itr = ::find (__threadSafeFileSystem__->writeOpenedFiles.begin (), __threadSafeFileSystem__->writeOpenedFiles.end (), __file__->path ());
+        __threadSafeFileSystem__->writeOpenedFiles.erase (itr); // file opened in write mode
     }
 
     __file__->close ();
@@ -390,44 +406,45 @@ threadSafeFS::File threadSafeFS::FS::open (const char* path, const char* mode) {
     xSemaphoreTake (getFsMutex (), portMAX_DELAY);
 
     // test first
-    if (strchr (mode, 'w') || strchr (mode, 'a')) { // open for writing
-        if (find (readOpenedFiles.begin (), readOpenedFiles.end (), fullPath) != readOpenedFiles.end () // file already opened in read mode
-                ||
-            find (writeOpenedFiles.begin (), writeOpenedFiles.end (), fullPath) != writeOpenedFiles.end () // file already opened in write mode
-        ) {
-                xSemaphoreGive (getFsMutex ());
-                return threadSafeFS::File ();   // invalid                
-            }
-    } else if (strchr (mode, 'r')) { // open for reading
-        if (find (writeOpenedFiles.begin (), writeOpenedFiles.end (), fullPath) != writeOpenedFiles.end () // file already opened in write mode
-            ) {
-                xSemaphoreGive (getFsMutex ());
-                return threadSafeFS::File ();   // invalid                
-            }
-    }
+    for (auto fn: writeOpenedFiles)
+        if (strcmp (fullPath.c_str (), fn) == 0) { // file already opened in write mode
+            xSemaphoreGive (getFsMutex ());
+            return threadSafeFS::File ();   // invalid                                
+        }
 
+    if (strchr (mode, 'w') || strchr (mode, 'a')) // open for writing
+        for (auto fn: readOpenedFiles)
+            if (strcmp (fullPath.c_str (), fn) == 0) { // file already opened in read mode
+                xSemaphoreGive (getFsMutex ());
+                return threadSafeFS::File ();   // invalid                                
+            }
+
+    // open underlaying file system file
     fs::File f = __fileSystem__.open (path, mode);
     if (!f) {
         xSemaphoreGive (getFsMutex ());
         return threadSafeFS::File ();   // invalid
     }  
 
+    // create thread-safe file from it
+    threadSafeFS::File tsFile (*this, std::move(f));    
+
     if (strchr (mode, 'w') || strchr (mode, 'a')) { // open for writing
-        if (writeOpenedFiles.push_front (f.path ())) { // couldn't update writeOpenedFiles list
-                f.close (); 
-                xSemaphoreGive (getFsMutex ());
-                return threadSafeFS::File ();   // invalid                
-            }
+        if (writeOpenedFiles.push_front (tsFile.__path__ ())) { // couldn't update writeOpenedFiles    
+            f.close (); 
+            xSemaphoreGive (getFsMutex ());
+            return threadSafeFS::File ();   // invalid            
+        }
     } else if (strchr (mode, 'r')) { // open for reading
-        if (readOpenedFiles.push_front (f.path ())) { // couldn't update readOpenedFiles list
-                f.close ();
-                xSemaphoreGive (getFsMutex ());
-                return threadSafeFS::File ();   // invalid                
-            }
+        if (readOpenedFiles.push_front (tsFile.__path__ ())) { // couldn't update readOpenedFiles     
+            f.close ();
+            xSemaphoreGive (getFsMutex ());
+            return threadSafeFS::File ();   // invalid                
+        }
     }
 
     xSemaphoreGive (getFsMutex ());
-    return threadSafeFS::File (*this, std::move (f));
+    return tsFile;
 }
 
 threadSafeFS::File threadSafeFS::FS::open (const String& path, const char* mode) {
@@ -659,7 +676,22 @@ processNormalCharacter:
 }
 
 
-// fprintf compatibility
+// standard C compatibility
+/*
+threadSafeFS::File fopen (const char *path, const char *mode) {
+    if (!path || !mode)
+        return threadSafeFS::File (); // invalid File
+    return tsfs.open (path, mode);
+}
+
+int fclose (threadSafeFS::File &f) {
+    if (!f)
+        return EOF;
+    f.close ();
+    return 0;
+}
+*/
+
 size_t fprintf (threadSafeFS::File &f, const char *fmt, ...) {
     if (!f || !fmt)
         return 0;

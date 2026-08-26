@@ -7,7 +7,7 @@
 
   A FS wrapper with mutex for multitasking.
 
-  March 12, 2026, Bojan Jurca
+  Aug 12, 2026, Bojan Jurca
 
 */
 
@@ -30,9 +30,14 @@
         class FS;   // forward declaration
 
         class File {
+            friend FS;
+
             private:
                 fs::File* __file__ = NULL;
                 FS* __threadSafeFileSystem__ = NULL;
+
+                const char * __path__ ();
+                const char * __name__ ();
 
             public:
                 File () = default;
@@ -120,16 +125,196 @@
             fs::FS& __fileSystem__;
 
         public:
-            list<Cstring<255>> readOpenedFiles;
-            list<Cstring<255>> writeOpenedFiles;
+            list<const char *> readOpenedFiles;
+            list<const char *> writeOpenedFiles;
 
             FS (fs::FS& fileSystem); // for file systems
 
-            /*
-            bool format ();
-            bool begin (bool formatOnFail = false);
-            void end ();
-            */
+            // begin, end and format functions not supported by FS
+            bool begin (bool formatOnFail = false) {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return LittleFS.begin (formatOnFail);
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return SPIFFS.begin (formatOnFail);
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return FFat.begin (formatOnFail);
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD)
+                        return SD.begin ();
+                #endif
+
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS or FFat or SD.");
+                abort (); // or esp_restart()
+
+                return false; // unreachable
+            }
+
+            void end () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS) {
+                        LittleFS.end ();
+                        return;
+                    }
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS) {
+                        SPIFFS.end ();
+                        return;
+                    }
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat) {
+                        FFat.end ();
+                        return;
+                    }
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD) {
+                        SD.end ();
+                        return;
+                    }
+                #endif
+
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS or FFat or SD.");
+                abort (); // or esp_restart ()
+
+                return; // unreachable
+            }
+
+            bool format () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return LittleFS.format ();
+                #endif
+
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return SPIFFS.format ();
+                #endif
+
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return FFat.format ();
+                #endif
+
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD) {
+                        Serial.println ("ERROR: SD filesystem does not support format().");
+                        return false;
+                    }
+                #endif
+
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS, FFat or SD.");
+                abort (); // ali esp_restart ()
+
+                return false; // unreachable
+            }
+
+            // report what underlaying file sistem really is
+            const char *name () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return "LittleFS";
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return "SPIFFS";
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return "FFat";
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD)
+                        return "SD";
+                #endif
+                return "unknown";
+            }
+
+            constexpr int fileNameMaxLen () {
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return 31;
+                #endif
+                return 255;
+            }
+            
+
+            // diske sizes
+            size_t totalBytes () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return LittleFS.totalBytes ();
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return SPIFFS.totalBytes ();
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return FFat.totalBytes ();
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD)
+                        return SD.cardSize ();
+                #endif
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS, FFat or SD.");
+                abort ();
+                return 0; // unreachable
+            }
+
+            size_t usedBytes () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return LittleFS.usedBytes ();
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return SPIFFS.usedBytes ();
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return FFat.usedBytes ();
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD) {
+                        return 0; // not supported for SD
+                    }
+                #endif
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS, FFat or SD.");
+                abort ();
+                return 0; // unreachable
+            }
+
+            size_t freeBytes () {
+                #if defined(_LITTLEFS_H_)
+                    if (&__fileSystem__ == &LittleFS)
+                        return LittleFS.totalBytes () - LittleFS.usedBytes ();
+                #endif
+                #if defined(_SPIFFS_H_)
+                    if (&__fileSystem__ == &SPIFFS)
+                        return SPIFFS.totalBytes () - SPIFFS.usedBytes ();
+                #endif
+                #if defined(_FFAT_H_)
+                    if (&__fileSystem__ == &FFat)
+                        return FFat.totalBytes () - FFat.usedBytes ();
+                #endif
+                #if defined(_SD_H_)
+                    if (&__fileSystem__ == &SD) {
+                        uint64_t cardSize = SD.cardSize();
+                        return cardSize > 0 ? cardSize : 0; // not supported for SD
+                    }
+                #endif
+                Serial.println ("FATAL ERROR: Unsupported filesystem. Include LittleFS, SPIFFS, FFat or SD.");
+                abort ();
+                return 0;
+            }
 
 
             File open (const char* path, const char* mode = FILE_READ);
@@ -168,9 +353,62 @@
         };
 
 
+        // create working singleton TSFS instance
+        inline FS& instance () {
+            static FS* singleton = NULL;
+            if (!singleton) {
+                #if defined(_LITTLEFS_H_)
+                    singleton = new FS (LittleFS);
+                #elif defined(_SPIFFS_H_)
+                    singleton = new FS (SPIFFS);
+                #elif defined(_FFAT_H_)
+                    singleton = new FS (FFat);
+                #elif defined(_SD_H_)
+                    singleton = new FS (SD);
+                #endif
+            }
+            return *singleton;
+        }
+    
+
     }; // namespace
 
-    // fprintf compatibility with standard C
+
+    // sigleton definition of tsfs
+    #ifdef _LITTLEFS_H_
+        #define TSFS_LITTLEFS 1
+    #else
+        #define TSFS_LITTLEFS 0
+    #endif
+    #ifdef _SPIFFS_H_
+        #define TSFS_SPIFFS 1
+    #else
+        #define TSFS_SPIFFS 0
+    #endif
+    #ifdef _FFAT_H_
+        #define TSFS_FFAT 1
+    #else
+        #define TSFS_FFAT 0
+    #endif
+    #ifdef _SD_H_
+        #define TSFS_SD 1
+    #else
+        #define TSFS_SD 0
+    #endif
+    #define TSFS_FS_COUNT (TSFS_LITTLEFS + TSFS_SPIFFS + TSFS_FFAT + TSFS_SD)    
+    #if TSFS_FS_COUNT == 1
+        static threadSafeFS::FS& tsfs = threadSafeFS::instance ();
+    #endif
+
+
+    // Use thread-safe wrapper for all file operations form now on in your code
+    using File = threadSafeFS::File;  
+
+
+    // standard C compatibility
+    // threadSafeFS::File fopen (const char *path, const char *mode);
+    // int fclose (threadSafeFS::File &f);
     size_t fprintf (threadSafeFS::File &f, const char *fmt, ...);
+
 
 #endif
